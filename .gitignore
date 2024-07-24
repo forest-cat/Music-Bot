@@ -11,3 +11,6 @@ dev-config.json
 
 # python venv
 .venv
+
+# ignore python cache
+*.pyc
