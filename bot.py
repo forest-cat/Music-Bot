@@ -1,7 +1,22 @@
 import discord
 from discord.ext import commands
 import yt_dlp
+import json
 import os
+
+
+def read_config():
+    os.chdir(os.path.dirname(__file__))
+    # Check if developing config exists
+    if os.path.exists("dev-config.json"):
+        configfile = "dev-config.json"
+    else:
+        configfile = "config.json"
+    with open(configfile, "r") as config:
+        config = json.load(config)
+    return config
+
+config = read_config()
 
 # Ensure FFmpeg is installed and available in your PATH
 FFMPEG_OPTIONS = {
@@ -78,4 +93,4 @@ async def stop(ctx):
     else:
         await ctx.send("No song is currently playing.")
 
-bot.run('Bot Token')
+bot.run(config['TOKEN'])

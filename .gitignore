@@ -1,6 +1,7 @@
 # Devenv
 .devenv*
 devenv.local.nix
+dev-config.json
 
 # direnv
 .direnv
