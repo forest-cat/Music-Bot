@@ -69,9 +69,9 @@ class Music(commands.Cog):
                 audio_url = info['url']
 
             ctx.voice_client.stop()
-            ctx.voice_client.source.volume = self.player_volume / 100
             ctx.voice_client.play(discord.FFmpegPCMAudio(
                 audio_url, **self.FFMPEG_OPTIONS), after=self.testfunc)
+            ctx.voice_client.source.volume = self.player_volume / 100
 
             await self.join_msg.edit_original_response(content=f'Now playing: `{info["title"]}`')
     @slash_command(name='join',
