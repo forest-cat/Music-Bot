@@ -1,6 +1,6 @@
 from discord.commands import slash_command
 from discord.ext import commands
-import ping3
+import icmplib
 import sys
 import os
 
@@ -16,8 +16,8 @@ class Main(commands.Cog):
     config = read_config()
 
     async def host_ping(self, host):
-        ping = int(round(ping3.ping(host, unit='ms')))
-        return ping
+        ping = icmplib.ping(address=host, count=4, privileged=False)
+        return int(round(ping.avg_rtt))
 
     @commands.Cog.listener()
     async def on_ready(self):
@@ -28,7 +28,8 @@ class Main(commands.Cog):
                    guild_ids=config["GUILD_IDS"],
                    description="Shows you the bots latency all the used services")
     async def ping(self, ctx):
-        await ctx.respond(f"""Discord.com: `{await self.host_ping('discord.com')}`ms\nYouTube.de: `{await self.host_ping('youtube.de')}`ms\nYouTube.com: `{await self.host_ping('youtube.com')}`ms""")
+        msg = await ctx.respond("-# *pinging* <a:loadingemoji:1266532115634323507>")
+        await msg.edit_original_response(content=f"""Discord.com: `{await self.host_ping('discord.com')}`ms\nYouTube.de: `{await self.host_ping('youtube.de')}`ms\nYouTube.com: `{await self.host_ping('youtube.com')}`ms""")
 
 
 def setup(bot):
