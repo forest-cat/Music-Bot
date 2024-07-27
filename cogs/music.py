@@ -4,6 +4,7 @@ import discord
 import yt_dlp
 import sys
 import os
+import re
 
 
 class Music(commands.Cog):
@@ -17,14 +18,16 @@ class Music(commands.Cog):
     # Ensure FFmpeg is installed and available in your PATH
     FFMPEG_OPTIONS = {
         'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
-        'options': '-vn -bufsize 64k' # increase buffer size to prevent overflow crashes (needs long time observation)
+        # increase buffer size to prevent overflow crashes (needs long time observation)
+        'options': '-vn -bufsize 64k'
     }
 
     ydl_opts = {
         'format': 'bestaudio/best',
         'noplaylist': True,
         'quiet': True,
-        'no_warnings': True
+        'no_warnings': True,
+        'default_search': 'auto'
     }
 
     config = read_config()
@@ -35,6 +38,31 @@ class Music(commands.Cog):
 
     def testfunc(self, error):
         print(f'Hello after the music is done {error}')
+
+    async def get_youtube_link(self, query):
+        # Regular expression to check if the string is a YouTube link
+        youtube_link_regex = re.compile(
+            r'^(https?\:\/\/)?(www\.youtube\.com|youtu\.?be)\/.+$'
+        )
+
+        ydl = yt_dlp.YoutubeDL(self.ydl_opts)
+        with ydl:
+            data = ydl.extract_info(query, download=False)
+            # Check if the input string is a YouTube link
+            if youtube_link_regex.match(query):
+                audio_url = data['url']
+                return audio_url, data['title']
+            # If not, search for the keyword on YouTube
+            else:
+                try:
+                    if data['entries']:
+                        # take first item from a playlist
+                        data = data['entries'][0]
+                        # print(f"\n\nDuration: {data['duration']}")
+                        return data['url'], data['title']
+                    return None, None
+                except IndexError:
+                    return None, None
 
     async def fail_voice_check(self, ctx):
         if not ctx.author.voice:
@@ -52,39 +80,26 @@ class Music(commands.Cog):
         discord.opus.load_opus(
             "/nix/store/bcrjdc1jc8b40401cvjldymp17rbaydk-libopus-1.5.1/lib/libopus.so")
 
-    @slash_command(name='test',
-                   guild_ids=config["GUILD_IDS"],
-                   description='just a test here')
-    async def test(self, ctx, query: str):
-        ydl = yt_dlp.YoutubeDL(self.ydl_opts)
-        with ydl:
-            info = ydl.extract_info(query, download=False)
-            audio_url = info['url']
-            print(info)
-
     @slash_command(name='play',
                    guild_ids=config["GUILD_IDS"],
                    description='Play a song from YouTube')
     async def play(self, ctx, query: str):
         await self.join(ctx)
+        song_url, title = await self.get_youtube_link(query)
+        if not song_url:
+            await self.join_msg.edit_original_response(content="Couldn't find that song!")
+            return
 
         if ctx.voice_client.is_playing():
             # Queue action here | make queue with touples (query, url)
-            pass
+            await self.join_msg.edit_original_response(content='Already playing a song, will add it to queue in the future. Stay tuned ^^')
         else:
-
-            ydl = yt_dlp.YoutubeDL(self.ydl_opts)
-
-            with ydl:
-                info = ydl.extract_info(query, download=False)
-                audio_url = info['url']
-
             ctx.voice_client.stop()
             ctx.voice_client.play(discord.FFmpegPCMAudio(
-                audio_url, **self.FFMPEG_OPTIONS), after=self.testfunc)
+                song_url, **self.FFMPEG_OPTIONS), after=self.testfunc)
             ctx.voice_client.source.volume = self.player_volume / 100
 
-            await self.join_msg.edit_original_response(content=f'Now playing: `{info["title"]}`')
+            await self.join_msg.edit_original_response(content=f'Now playing: `{title}`')
 
     @slash_command(name='join',
                    guild_ids=config["GUILD_IDS"],
@@ -96,6 +111,12 @@ class Music(commands.Cog):
         voice_channel = ctx.author.voice.channel
         if not ctx.voice_client:
             await voice_channel.connect()
+        elif ctx.voice_client.channel == ctx.voice_client.channel and ctx.command.qualified_name == "join":
+            self.join_msg = await ctx.respond("The bot is already connected to your voice channel.")
+            return
+        elif ctx.voice_client.channel == ctx.voice_client.channel and ctx.command.qualified_name == "play":
+            self.join_msg = await ctx.respond("-# searching song")
+            return
         else:
             await ctx.voice_client.disconnect()
             await voice_channel.connect()
