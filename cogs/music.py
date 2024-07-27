@@ -36,6 +36,17 @@ class Music(commands.Cog):
     def testfunc(self, error):
         print(f'Hello after the music is done {error}')
 
+    async def fail_voice_check(self, ctx):
+        if not ctx.author.voice:
+            await ctx.respond("You are not connected to a voice channel.")
+            return True
+        if not ctx.voice_client:
+            await ctx.respond("The bot is not connected to a voice channel.")
+            return True
+        if not ctx.voice_client.channel == ctx.author.voice.channel:
+            await ctx.respond("You are not connected to the same voice channel as the bot.")
+            return True
+
     @commands.Cog.listener()
     async def on_ready(self):
         discord.opus.load_opus(
@@ -74,6 +85,7 @@ class Music(commands.Cog):
             ctx.voice_client.source.volume = self.player_volume / 100
 
             await self.join_msg.edit_original_response(content=f'Now playing: `{info["title"]}`')
+
     @slash_command(name='join',
                    guild_ids=config["GUILD_IDS"],
                    description='Summons the bot to your current channel')
@@ -85,25 +97,16 @@ class Music(commands.Cog):
         if not ctx.voice_client:
             await voice_channel.connect()
         else:
-            await ctx.voice_client.move_to(ctx.author.voice.channel)
+            await ctx.voice_client.disconnect()
+            await voice_channel.connect()
         self.join_msg = await ctx.respond(f"Connected to {voice_channel}")
 
     @slash_command(name='leave',
                    guild_ids=config["GUILD_IDS"],
                    description='Disconnect the bot from the voice channel')
     async def leave(self, ctx):
-        if not ctx.voice_client:
-            await ctx.respond("The bot is not connected to a voice channel.")
+        if await self.fail_voice_check(ctx):
             return
-
-        if not ctx.author.voice:
-            await ctx.respond("You are not connected to a voice channel.")
-            return
-
-        if not ctx.voice_client.channel == ctx.author.voice.channel:
-            await ctx.respond("You are not connected to the same voice channel as the bot.")
-            return
-
         await ctx.voice_client.disconnect()
         await ctx.respond("Disconnected from the voice channel.")
 
@@ -111,6 +114,8 @@ class Music(commands.Cog):
                    guild_ids=config["GUILD_IDS"],
                    description='Pause the currently playing song')
     async def pause(self, ctx):
+        if await self.fail_voice_check(ctx):
+            return
         if ctx.voice_client.is_playing():
             ctx.voice_client.pause()
             await ctx.respond("Paused the song.")
@@ -121,6 +126,8 @@ class Music(commands.Cog):
                    guild_ids=config["GUILD_IDS"],
                    description='Resume the currently paused song')
     async def resume(self, ctx):
+        if await self.fail_voice_check(ctx):
+            return
         if ctx.voice_client.is_paused():
             ctx.voice_client.resume()
             await ctx.respond("Resumed the song.")
@@ -131,13 +138,11 @@ class Music(commands.Cog):
                    guild_ids=config["GUILD_IDS"],
                    description='Stop the currently playing song')
     async def stop(self, ctx):
-        if not ctx.voice_client:
-            await ctx.respond("The bot is not connected to a voice channel.")
+        if await self.fail_voice_check(ctx):
             return
         if not ctx.voice_client.is_playing():
             await ctx.respond("No song is currently playing.")
             return
-        
         ctx.voice_client.stop()
         await ctx.respond("Stopped the song.")
 
