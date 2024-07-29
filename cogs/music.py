@@ -101,6 +101,9 @@ class Music(commands.Cog):
         if not song_url:
             await self.last_msg.edit_original_response(content="Couldn't find that song!")
             return
+        
+        if not ctx.voice_client:
+            return
 
         if ctx.voice_client.is_playing():
             # Queue action here | make queue with touples (query, url)
