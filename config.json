@@ -1,5 +1,6 @@
 {
     "TOKEN": "insert your discord bot token here",
     "GUILD_IDS": [123456789, 12345678910],
-    "DEFAULT_PLAYER_VOLUME": 25
+    "DEFAULT_PLAYER_VOLUME": 25,
+    "LIBOPUS_PATH": "path to your libopus.so"
 }

@@ -89,8 +89,7 @@ class Music(commands.Cog):
 
     @commands.Cog.listener()
     async def on_ready(self):
-        discord.opus.load_opus(
-            "/nix/store/bcrjdc1jc8b40401cvjldymp17rbaydk-libopus-1.5.1/lib/libopus.so")
+        discord.opus.load_opus(self.config["LIBOPUS_PATH"])
 
     @slash_command(name='play',
                    guild_ids=config["GUILD_IDS"],
