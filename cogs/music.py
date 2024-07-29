@@ -1,6 +1,7 @@
 from discord.commands import slash_command
 from discord.ext import commands
 import discord
+import asyncio
 import yt_dlp
 import sys
 import os
@@ -34,10 +35,21 @@ class Music(commands.Cog):
     song_queue = []
     currentPlayingSong = None
     player_volume = int(config["DEFAULT_PLAYER_VOLUME"])
-    join_msg = None
+    last_msg = None
 
-    def testfunc(self, error):
-        print(f'Hello after the music is done {error}')
+    async def play_next_song(self, error, ctx):
+        if not self.song_queue:
+            return
+        ctx.voice_client.play(discord.FFmpegPCMAudio(
+            self.song_queue[0][0], **self.FFMPEG_OPTIONS), after=lambda error: asyncio.run_coroutine_threadsafe(self.play_next_song_wrapper(error, ctx), self.bot.loop))
+        ctx.voice_client.source.volume = self.player_volume / 100
+
+        await self.last_msg.edit_original_response(content=f'Now playing: `{self.song_queue[0][1]}`')
+        self.currentPlayingSong = self.song_queue[0]
+        self.song_queue.pop(0)
+
+    async def play_next_song_wrapper(self, error, ctx):
+        await self.play_next_song(error, ctx)
 
     async def get_youtube_link(self, query):
         # Regular expression to check if the string is a YouTube link
@@ -87,19 +99,21 @@ class Music(commands.Cog):
         await self.join(ctx)
         song_url, title = await self.get_youtube_link(query)
         if not song_url:
-            await self.join_msg.edit_original_response(content="Couldn't find that song!")
+            await self.last_msg.edit_original_response(content="Couldn't find that song!")
             return
 
         if ctx.voice_client.is_playing():
             # Queue action here | make queue with touples (query, url)
-            await self.join_msg.edit_original_response(content='Already playing a song, will add it to queue in the future. Stay tuned ^^')
+            self.last_msg = await self.last_msg.edit_original_response(content=f'[+] Already playing, adding to queue: `{title}`')
+            self.song_queue.append((song_url, title))
         else:
             ctx.voice_client.stop()
             ctx.voice_client.play(discord.FFmpegPCMAudio(
-                song_url, **self.FFMPEG_OPTIONS), after=self.testfunc)
+                song_url, **self.FFMPEG_OPTIONS), after=lambda error: asyncio.run_coroutine_threadsafe(self.play_next_song_wrapper(error, ctx), self.bot.loop))
             ctx.voice_client.source.volume = self.player_volume / 100
 
-            await self.join_msg.edit_original_response(content=f'Now playing: `{title}`')
+            await self.last_msg.edit_original_response(content=f'Now playing: `{title}`')
+            self.currentPlayingSong = (song_url, title)
 
     @slash_command(name='join',
                    guild_ids=config["GUILD_IDS"],
@@ -112,15 +126,15 @@ class Music(commands.Cog):
         if not ctx.voice_client:
             await voice_channel.connect()
         elif ctx.voice_client.channel == ctx.voice_client.channel and ctx.command.qualified_name == "join":
-            self.join_msg = await ctx.respond("The bot is already connected to your voice channel.")
+            self.last_msg = await ctx.respond("The bot is already connected to your voice channel.")
             return
         elif ctx.voice_client.channel == ctx.voice_client.channel and ctx.command.qualified_name == "play":
-            self.join_msg = await ctx.respond("-# searching song")
+            self.last_msg = await ctx.respond("-# searching song")
             return
         else:
             await ctx.voice_client.disconnect()
             await voice_channel.connect()
-        self.join_msg = await ctx.respond(f"Connected to {voice_channel}")
+        self.last_msg = await ctx.respond(f"Connected to {voice_channel}")
 
     @slash_command(name='leave',
                    guild_ids=config["GUILD_IDS"],
@@ -157,16 +171,51 @@ class Music(commands.Cog):
 
     @slash_command(name='stop',
                    guild_ids=config["GUILD_IDS"],
-                   description='Stop the currently playing song')
+                   description='Stops the currently playing song and clears the queue')
     async def stop(self, ctx):
         if await self.fail_voice_check(ctx):
             return
         if not ctx.voice_client.is_playing():
             await ctx.respond("No song is currently playing.")
             return
+        if self.song_queue:
+            self.song_queue.clear()
         ctx.voice_client.stop()
-        await ctx.respond("Stopped the song.")
+        await ctx.respond("Stopped the song and cleared the queue.")
 
+    @slash_command(name='queue',
+                   guild_ids=config["GUILD_IDS"],
+                   description='Display the current song queue')
+    async def queue(self, ctx):
+        if not self.song_queue:
+            await ctx.respond("The queue is empty.")
+            return
+        queue_list = '\n'.join([f'{index}. `{song[1]}`' for index, song in enumerate(self.song_queue)])
+        await ctx.respond(f'**Song Queue:**\n{queue_list}')
+    
+    @slash_command(name='skip',
+                   guild_ids=config["GUILD_IDS"],
+                   description='Skip the currently playing song')
+    async def skip(self, ctx):
+        if await self.fail_voice_check(ctx):
+            return
+        if not ctx.voice_client.is_playing():
+            await ctx.respond("No song is currently playing.")
+            return
+        if not self.song_queue:
+            await ctx.respond("Whoops thats already the end of the queue ¯\_(ツ)_/¯")
+            return
+        self.last_msg = await ctx.respond("Skipped the song.")
+        ctx.voice_client.stop()
+    
+    @slash_command(name='nowplaying',
+                    guild_ids=config["GUILD_IDS"],
+                    description='Display the currently playing song')
+    async def nowplaying(self, ctx):
+        if not self.currentPlayingSong:
+            await ctx.respond("No song is currently playing.")
+            return
+        self.last_msg = await ctx.respond(f'Now playing: `{self.currentPlayingSong[1]}`')
 
 def setup(bot):
     bot.add_cog(Music(bot))
