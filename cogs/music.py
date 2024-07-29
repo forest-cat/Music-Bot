@@ -44,7 +44,7 @@ class Music(commands.Cog):
             self.song_queue[0][0], **self.FFMPEG_OPTIONS), after=lambda error: asyncio.run_coroutine_threadsafe(self.play_next_song_wrapper(error, ctx), self.bot.loop))
         ctx.voice_client.source.volume = self.player_volume / 100
 
-        await self.last_msg.edit_original_response(content=f'Now playing: `{self.song_queue[0][1]}`')
+        self.last_msg = await self.last_msg.edit_original_response(content=f'Now playing: `{self.song_queue[0][1]}`')
         self.currentPlayingSong = self.song_queue[0]
         self.song_queue.pop(0)
 
