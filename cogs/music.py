@@ -76,6 +76,8 @@ class Music(commands.Cog):
             # Check if the input string is a YouTube link
             if youtube_link_regex.match(query):
                 audio_url = data['url']
+                if not 'duration' in data:
+                    data['duration'] = 0
                 return audio_url, data['title'], data['webpage_url'], data['duration']
             # If not, search for the keyword on YouTube
             else:
