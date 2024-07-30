@@ -21,7 +21,7 @@ class Music(commands.Cog):
     FFMPEG_OPTIONS = {
         'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
         # increase buffer size to prevent overflow crashes (needs long time observation)
-        'options': '-vn -bufsize 64k'
+        'options': '-vn -bufsize 64k -loglevel panic'
     }
 
     ydl_opts = {
@@ -38,6 +38,15 @@ class Music(commands.Cog):
     player_volume = int(config["DEFAULT_PLAYER_VOLUME"])
     last_msg = {}
 
+    def seconds_to_hhmmss(self, seconds):
+        # Calculate the number of hours, minutes, and seconds
+        hours = seconds // 3600
+        minutes = (seconds % 3600) // 60
+        remaining_seconds = seconds % 60
+        
+        # Format the result as hh:mm:ss
+        return f"{hours:02}:{minutes:02}:{remaining_seconds:02}"
+    
     def on_future_done(self, future, ctx):
         self.last_msg[ctx.guild.id] = future.result()
 
@@ -53,10 +62,10 @@ class Music(commands.Cog):
         ctx.voice_client.source.volume = self.player_volume / 100
 
         future = asyncio.run_coroutine_threadsafe(self.last_msg[ctx.guild.id].edit(
-            content=f'Now playing: `{self.currentPlayingSong[ctx.guild.id][1]}`'), self.bot.loop)
+            content=f'**Now playing :musical_note:**\n [{self.seconds_to_hhmmss(int(self.currentPlayingSong[ctx.guild.id][3]))}] :clock10: | [{self.currentPlayingSong[ctx.guild.id][1]}](<{self.currentPlayingSong[ctx.guild.id][2]}>)'), self.bot.loop)
         future.add_done_callback(partial(self.on_future_done, ctx=ctx))
 
-    async def get_youtube_link(self, query):
+    async def get_youtube_info(self, query):
         # Regular expression to check if the string is a YouTube link
         youtube_link_regex = re.compile(
             r'^(https?\:\/\/)?(www\.youtube\.com|youtu\.?be)\/.+$')
@@ -67,7 +76,7 @@ class Music(commands.Cog):
             # Check if the input string is a YouTube link
             if youtube_link_regex.match(query):
                 audio_url = data['url']
-                return audio_url, data['title']
+                return audio_url, data['title'], data['webpage_url'], data['duration']
             # If not, search for the keyword on YouTube
             else:
                 try:
@@ -75,10 +84,10 @@ class Music(commands.Cog):
                         # take first item from a playlist
                         data = data['entries'][0]
                         # print(f"\n\nDuration: {data['duration']}")
-                        return data['url'], data['title']
-                    return None, None
+                        return data['url'], data['title'], data['webpage_url'], data['duration']
+                    return None, None, None, None
                 except IndexError:
-                    return None, None
+                    return None, None, None, None
 
     async def fail_voice_check(self, ctx):
         if not ctx.author.voice:
@@ -102,7 +111,7 @@ class Music(commands.Cog):
         await self.join(ctx)
         if ctx.guild.id not in self.queues:
             self.queues[ctx.guild.id] = []
-        song_url, title = await self.get_youtube_link(query)
+        song_url, title, yt_url, duration = await self.get_youtube_info(query)
         if not song_url:
             await self.last_msg[ctx.guild.id].edit(content="Couldn't find that song!")
             return
@@ -110,11 +119,11 @@ class Music(commands.Cog):
             return
         if ctx.voice_client.is_playing():
             # Queue action here | make queue with touples (query, url)
-            self.last_msg[ctx.guild.id] = await self.last_msg[ctx.guild.id].edit(content=f'[+] Adding to queue: `{title}`')
-            self.queues[ctx.guild.id].append((song_url, title))
+            self.last_msg[ctx.guild.id] = await self.last_msg[ctx.guild.id].edit(content=f'**Adding to queue :clipboard:**\n [{self.seconds_to_hhmmss(int(duration))}] :clock10: | [{title}](<{yt_url}>)')
+            self.queues[ctx.guild.id].append((song_url, title, yt_url, duration))
         else:
-            self.queues[ctx.guild.id].append((song_url, title))
-            self.currentPlayingSong[ctx.guild.id] = (song_url, title)
+            self.queues[ctx.guild.id].append((song_url, title, yt_url, duration))
+            self.currentPlayingSong[ctx.guild.id] = (song_url, title, yt_url, duration)
             self.play_next_song(None, ctx)
 
     @slash_command(name='join',
@@ -136,7 +145,7 @@ class Music(commands.Cog):
         else:
             await ctx.voice_client.disconnect()
             await voice_channel.connect()
-        self.last_msg[ctx.guild.id] = await ctx.respond(f"Connected to {voice_channel}")
+        self.last_msg[ctx.guild.id] = await ctx.respond(f"Connected to {voice_channel.mention}")
 
     @slash_command(name='leave',
                    guild_ids=config["GUILD_IDS"],
@@ -145,7 +154,7 @@ class Music(commands.Cog):
         if await self.fail_voice_check(ctx):
             return
         await ctx.voice_client.disconnect()
-        await ctx.respond("Disconnected from the voice channel.")
+        await ctx.respond(f"Disconnected from {ctx.author.voice.channel.mention}")
 
     @slash_command(name='pause',
                    guild_ids=config["GUILD_IDS"],
@@ -196,8 +205,8 @@ class Music(commands.Cog):
             await ctx.respond("The queue is empty.")
             return
         queue_list = '\n'.join(
-            [f'{index}. `{song[1]}`' for index, song in enumerate(self.queues[ctx.guild.id])])
-        self.last_msg[ctx.guild.id] = await ctx.respond(f'## Song Queue:\n{queue_list}')
+            [f'{index}.  [{self.seconds_to_hhmmss(int(song[3]))}] :clock10: | [{song[1]}](<{song[2]}>)' for index, song in enumerate(self.queues[ctx.guild.id])])
+        self.last_msg[ctx.guild.id] = await ctx.respond(f'## Song Queue\n{queue_list}')
 
     @slash_command(name='skip',
                    guild_ids=config["GUILD_IDS"],
@@ -221,7 +230,7 @@ class Music(commands.Cog):
         if ctx.guild.id not in self.currentPlayingSong:
             await ctx.respond("No song is currently playing.")
             return
-        self.last_msg[ctx.guild.id] = await ctx.respond(f'Now playing: `{self.currentPlayingSong[ctx.guild.id][1]}`')
+        self.last_msg[ctx.guild.id] = await ctx.respond(f'**Now playing :musical_note:**\n [{self.seconds_to_hhmmss(int(self.currentPlayingSong[ctx.guild.id][3]))}] :clock10: | [{self.currentPlayingSong[ctx.guild.id][1]}](<{self.currentPlayingSong[ctx.guild.id][2]}>)')
 
 
 def setup(bot):
