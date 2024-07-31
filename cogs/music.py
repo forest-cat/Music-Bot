@@ -54,6 +54,7 @@ class Music(commands.Cog):
         if not self.queues[ctx.guild.id]:
             future = asyncio.run_coroutine_threadsafe(
                 self.last_msg[ctx.guild.id].edit(content=f'Queue finished!'), self.bot.loop)
+            self.currentPlayingSong[ctx.guild.id] = None
             return
         self.currentPlayingSong[ctx.guild.id] = self.queues[ctx.guild.id][0]
         self.queues[ctx.guild.id].pop(0)
@@ -67,6 +68,8 @@ class Music(commands.Cog):
 
     async def get_youtube_info(self, query):
         # Regular expression to check if the string is a YouTube link
+        if 'music.youtube' in query:
+            return None, None, None, None
         youtube_link_regex = re.compile(
             r'^(https?\:\/\/)?(www\.youtube\.com|youtu\.?be)\/.+$')
 
@@ -82,7 +85,7 @@ class Music(commands.Cog):
             # If not, search for the keyword on YouTube
             else:
                 try:
-                    if data['entries']:
+                    if 'entries' in data:
                         # take first item from a playlist
                         data = data['entries'][0]
                         # print(f"\n\nDuration: {data['duration']}")
@@ -193,6 +196,8 @@ class Music(commands.Cog):
             return
         if ctx.guild.id in self.queues:
             self.queues[ctx.guild.id].clear()
+        if ctx.guild.id in self.currentPlayingSong:
+            self.currentPlayingSong[ctx.guild.id] = None
         ctx.voice_client.stop()
         await ctx.respond("Stopped the song and cleared the queue.")
 
@@ -230,6 +235,9 @@ class Music(commands.Cog):
                    description='Display the currently playing song')
     async def nowplaying(self, ctx):
         if ctx.guild.id not in self.currentPlayingSong:
+            await ctx.respond("No song is currently playing.")
+            return
+        if not self.currentPlayingSong[ctx.guild.id]:
             await ctx.respond("No song is currently playing.")
             return
         self.last_msg[ctx.guild.id] = await ctx.respond(f'**Now playing :musical_note:**\n [{self.seconds_to_hhmmss(int(self.currentPlayingSong[ctx.guild.id][3]))}] :clock10: | [{self.currentPlayingSong[ctx.guild.id][1]}](<{self.currentPlayingSong[ctx.guild.id][2]}>)')
